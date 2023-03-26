@@ -1,6 +1,12 @@
 from pathlib import Path
 
 class CFG:
+    n_fft = 2048
+    hop_length = 512
+    sample_rate = 32000
+    n_mels = 128
+    fmin = 20
+    fmax = 16000
     period = 20
     transforms = {
         "train": [{"name": "Normalize"}],

@@ -57,10 +57,8 @@ class WaveformDataset(torchdata.Dataset):
 
         sound = np.nan_to_num(sound)
 
-        labels = np.zeros(len(CFG.target_columns), dtype=float)
-        labels[CFG.target_columns.index(ebird_code)] = 1.0
+        # labels = np.zeros(len(CFG.target_columns), dtype=float)
+        # labels[CFG.target_columns.index(ebird_code)] = 1.0
+        label = CFG.target_columns.index(ebird_code)
 
-        return {
-            "image": sound,
-            "targets": labels
-        }
+        return sound, label
