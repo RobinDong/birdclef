@@ -13,14 +13,16 @@ import torch.nn as nn
 from config import CFG
 from dataset import WaveformDataset
 from model import TimmSED
+from loss import BCEFocal2WayLoss
 from sklearn import model_selection
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+import apex.amp as amp
 
 config = {
     "num_classes": len(CFG.target_columns),
-    "num_workers": 2,
+    "num_workers": 4,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
     "temperature": 2.0,
@@ -96,6 +98,7 @@ def evaluate(args, net, eval_loader):
         # sounds = sounds.unsqueeze(3)
         # sounds = sounds.permute(0, 3, 1, 2).float()
         out = net(sounds)["clipwise_output"]
+        out = out.half() if args.fp16 else out.float()
         # accuracy
         _, predict = torch.max(out, 1)
         correct = (predict == type_ids)
@@ -105,8 +108,6 @@ def evaluate(args, net, eval_loader):
         # loss
         loss = F.cross_entropy(out, type_ids)
         total_loss += loss.item()
-    print("sum_correct:", sum_correct, eval_samples)
-    print("sum_accuracy:", sum_accuracy, iteration)
     return total_loss / iteration, sum_correct / eval_samples
 
 
@@ -139,15 +140,16 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
 def criterion(outputs, targets):
     return torch.sum(-targets * F.log_softmax(outputs, -1), -1).mean()
 
+criterion = BCEFocal2WayLoss()
 
 def mixup_criterion(pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b), lam * y_a + (1 - lam) * y_b
 
 
 def train(args, train_loader, eval_loader):
-    net = TimmSED("tf_efficientnet_b0_ns", num_classes=config["num_classes"])
+    net = TimmSED("tf_efficientnetv2_s_in21k", num_classes=config["num_classes"])
+    print(net)
     net = net.cuda(device=torch.cuda.current_device())
-    print("net", net)
 
     if args.resume:
         print("Resuming training, loading {}...".format(args.resume))
@@ -170,18 +172,14 @@ def train(args, train_loader, eval_loader):
             for param in layer.parameters():
                 param.requies_grad = True
         net.head.fc.weight.requires_grad = True
-        optimizer = optim.SGD(
+        optimizer = optim.AdamW(
             filter(lambda param: param.requires_grad, net.parameters()),
             lr=args.lr,
-            momentum=args.momentum,
-            nesterov=False,
         )
     else:
-        optimizer = optim.SGD(
+        optimizer = optim.AdamW(
             net.parameters(),
             lr=args.lr,
-            momentum=args.momentum,
-            nesterov=False,
         )
 
     scheduler = ReduceLROnPlateau(
@@ -194,16 +192,13 @@ def train(args, train_loader, eval_loader):
         threshold_mode="abs",
     )
 
-    if args.fp16:
-        import apex.amp as amp
-
-        net, optimizer = amp.initialize(net, optimizer, opt_level="O2")
+    net, optimizer = amp.initialize(net, optimizer, opt_level="O0" if args.fp16 else "O0")
 
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
     config["eval_period"] = len(train_loader.dataset) // args.batch_size
-    config["verbose_period"] = config["eval_period"] // 50
+    config["verbose_period"] = config["eval_period"] // 5
 
     train_start_time = time.time()
     for iteration in range(
@@ -231,6 +226,7 @@ def train(args, train_loader, eval_loader):
             if args.distill_mode:
                 labels = labels.cuda()
 
+        sounds = sounds.half() if args.fp16 else sounds.float()
         # sounds = sounds.unsqueeze(3)
         # sounds = sounds.permute(0, 3, 1, 2).float()
 
@@ -249,22 +245,22 @@ def train(args, train_loader, eval_loader):
         if args.distill_mode:
             one_hot = labels
 
-        for index in range(2):  # Let's mixup two times
-            # 'sounds' is input and 'one_hot' is target
-            inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
-            # forward
-            out = net(inputs)
-            out = out["clipwise_output"]
-            loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
+        for index in range(1):  # Let's mixup two times
+            if iteration % config["verbose_period"] == 0:
+                out = net(sounds)
+                loss = criterion(out, one_hot)
+            else:
+                # 'sounds' is input and 'one_hot' is target
+                inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
+                # forward
+                out = net(inputs)
+                loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
 
             # backprop
-            optimizer.zero_grad(set_to_none=True)
+            optimizer.zero_grad()
             # loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
             # loss = F.cross_entropy(out, type_ids)
-
             if args.fp16:
-                import apex.amp as amp
-
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
@@ -276,6 +272,7 @@ def train(args, train_loader, eval_loader):
         t1 = time.time()
 
         if iteration % config["verbose_period"] == 0:
+            out = out["clipwise_output"]
             # accuracy
             _, predict = torch.max(out, 1)
             _, should = torch.max(out_mixup, 1)
@@ -343,7 +340,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=0.01, type=float, help="Initial learning rate"
+        "--lr", default=4e-4, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",
@@ -365,7 +362,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--fp16",
-        default=False,
+        default=True,
         type=bool,
         help="Use float16 precision to train",
     )

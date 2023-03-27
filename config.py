@@ -15,7 +15,7 @@ class CFG:
     img_size = 224
     split = "StratifiedKFold"
     split_params = {
-        "n_splits": 5,
+        "n_splits": 8,
         "shuffle": True,
         "random_state": 1213
     }
