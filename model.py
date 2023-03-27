@@ -232,11 +232,11 @@ class TimmSED(nn.Module):
         x2 = F.avg_pool1d(x, kernel_size=3, stride=1, padding=1)
         x = x1 + x2
 
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.5, training=self.training)
         x = x.transpose(1, 2)
         x = F.relu_(self.fc1(x))
         x = x.transpose(1, 2)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.5, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
         segmentwise_logit = self.att_block.cla(x).transpose(1, 2)

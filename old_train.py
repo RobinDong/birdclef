@@ -80,9 +80,7 @@ def save_ckpt(net, iteration):
 
 
 def evaluate(args, net, eval_loader):
-    total_loss = 0.0
     batch_iterator = iter(eval_loader)
-    sum_accuracy = 0.0
     sum_correct = 0
     eval_samples = 0
     for iteration in range(len(eval_loader)):
@@ -98,17 +96,12 @@ def evaluate(args, net, eval_loader):
         # sounds = sounds.unsqueeze(3)
         # sounds = sounds.permute(0, 3, 1, 2).float()
         out = net(sounds)["clipwise_output"]
-        out = out.half() if args.fp16 else out.float()
         # accuracy
         _, predict = torch.max(out, 1)
         correct = (predict == type_ids)
-        sum_accuracy += correct.sum().item() / correct.size()[0]
         sum_correct += correct.sum().item()
         eval_samples += sounds.shape[0]
-        # loss
-        loss = F.cross_entropy(out, type_ids)
-        total_loss += loss.item()
-    return total_loss / iteration, sum_correct / eval_samples
+    return sum_correct / eval_samples
 
 
 def warmup_learning_rate(optimizer, steps, warmup_steps):
@@ -192,8 +185,6 @@ def train(args, train_loader, eval_loader):
         threshold_mode="abs",
     )
 
-    net, optimizer = amp.initialize(net, optimizer, opt_level="O0" if args.fp16 else "O0")
-
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
@@ -226,10 +217,6 @@ def train(args, train_loader, eval_loader):
             if args.distill_mode:
                 labels = labels.cuda()
 
-        sounds = sounds.half() if args.fp16 else sounds.float()
-        # sounds = sounds.unsqueeze(3)
-        # sounds = sounds.permute(0, 3, 1, 2).float()
-
         if torch.cuda.is_available():
             one_hot = torch.cuda.FloatTensor(
                 type_ids.shape[0], config["num_classes"]
@@ -246,7 +233,7 @@ def train(args, train_loader, eval_loader):
             one_hot = labels
 
         for index in range(1):  # Let's mixup two times
-            if iteration % config["verbose_period"] == 0:
+            if iteration % config["verbose_period"] <= (config["verbose_period"] // 3):
                 out = net(sounds)
                 loss = criterion(out, one_hot)
             else:
@@ -258,13 +245,7 @@ def train(args, train_loader, eval_loader):
 
             # backprop
             optimizer.zero_grad()
-            # loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
-            # loss = F.cross_entropy(out, type_ids)
-            if args.fp16:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
+            loss.backward()
 
             nn.utils.clip_grad_norm_(net.parameters(), max_norm=20, norm_type=2)
             optimizer.step()
@@ -275,8 +256,7 @@ def train(args, train_loader, eval_loader):
             out = out["clipwise_output"]
             # accuracy
             _, predict = torch.max(out, 1)
-            _, should = torch.max(out_mixup, 1)
-            correct = (predict == should)
+            correct = (predict == type_ids)
             accuracy = correct.sum().item() / correct.size()[0]
             print(
                 "iter: %d loss: %.4f | acc: %.4f | time: %.4f sec."
@@ -296,7 +276,7 @@ def train(args, train_loader, eval_loader):
             and step != 0
         ):
             with torch.no_grad():
-                loss, accuracy = evaluate(args, net, eval_loader)
+                accuracy = evaluate(args, net, eval_loader)
             hours = int(time.time() - train_start_time) // 3600
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             print(
@@ -359,12 +339,6 @@ if __name__ == "__main__":
         default=False,
         type=bool,
         help="Finetune model by using all categories",
-    )
-    parser.add_argument(
-        "--fp16",
-        default=True,
-        type=bool,
-        help="Use float16 precision to train",
     )
     parser.add_argument(
         "--distill_mode",
