@@ -10,13 +10,11 @@ class WaveformDataset(torchdata.Dataset):
     def __init__(self,
                  df: pd.DataFrame,
                  datadir: Path,
-                 img_size = 224,
                  waveform_transforms = None,
-                 period = 20,
+                 period = 5,
                  validation = False):
         self.df = df
         self.datadir = datadir
-        self.img_size = img_size
         self.waveform_transforms = waveform_transforms
         self.period = period
         self.validation = validation

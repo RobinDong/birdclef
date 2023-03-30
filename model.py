@@ -169,7 +169,7 @@ class AttBlockV2(nn.Module):
 
 
 class TimmSED(nn.Module):
-    def __init__(self, base_model_name: str, pretrained=False, num_classes=24, in_channels=1):
+    def __init__(self, base_model_name: str, num_classes, pretrained=False, in_channels=1):
         super().__init__()
         # Spectrogram extractor
         self.spectrogram_extractor = Spectrogram(n_fft=CFG.n_fft, hop_length=CFG.hop_length,
@@ -182,7 +182,7 @@ class TimmSED(nn.Module):
                                                  freeze_parameters=True)
 
         # Spec augmenter
-        self.spec_augmenter = SpecAugmentation(time_drop_width=64, time_stripes_num=2,
+        self.spec_augmenter = SpecAugmentation(time_drop_width=32, time_stripes_num=2,
                                                freq_drop_width=8, freq_stripes_num=2)
 
         self.bn0 = nn.BatchNorm2d(CFG.n_mels)
@@ -217,6 +217,7 @@ class TimmSED(nn.Module):
         x = self.bn0(x)
         x = x.transpose(1, 3)
 
+        # print(x.shape, self.training)
         if self.training:
             x = self.spec_augmenter(x)
 
@@ -232,11 +233,11 @@ class TimmSED(nn.Module):
         x2 = F.avg_pool1d(x, kernel_size=3, stride=1, padding=1)
         x = x1 + x2
 
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         x = x.transpose(1, 2)
         x = F.relu_(self.fc1(x))
         x = x.transpose(1, 2)
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
         segmentwise_logit = self.att_block.cla(x).transpose(1, 2)

@@ -12,13 +12,11 @@ import torch.nn as nn
 
 from config import CFG
 from dataset import WaveformDataset
-from model import TimmSED
+from model import TimmSED, init_weights
 from loss import BCEFocal2WayLoss
 from sklearn import model_selection
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
-import apex.amp as amp
 
 config = {
     "num_classes": len(CFG.target_columns),
@@ -84,17 +82,12 @@ def evaluate(args, net, eval_loader):
     sum_correct = 0
     eval_samples = 0
     for iteration in range(len(eval_loader)):
-        if args.distill_mode:
-            sounds, type_ids, _ = next(batch_iterator)
-        else:
-            sounds, type_ids = next(batch_iterator)
+        sounds, type_ids = next(batch_iterator)
         if torch.cuda.is_available():
             sounds = sounds.cuda()
             type_ids = type_ids.cuda()
 
         # forward
-        # sounds = sounds.unsqueeze(3)
-        # sounds = sounds.permute(0, 3, 1, 2).float()
         out = net(sounds)["clipwise_output"]
         # accuracy
         _, predict = torch.max(out, 1)
@@ -141,8 +134,10 @@ def mixup_criterion(pred, y_a, y_b, lam):
 
 def train(args, train_loader, eval_loader):
     net = TimmSED("tf_efficientnetv2_s_in21k", num_classes=config["num_classes"])
+    init_weights(net)
     print(net)
     net = net.cuda(device=torch.cuda.current_device())
+    # net = torch.compile(net)
 
     if args.resume:
         print("Resuming training, loading {}...".format(args.resume))
@@ -190,6 +185,7 @@ def train(args, train_loader, eval_loader):
     step = 0
     config["eval_period"] = len(train_loader.dataset) // args.batch_size
     config["verbose_period"] = config["eval_period"] // 5
+    print("config:", config)
 
     train_start_time = time.time()
     for iteration in range(
@@ -198,26 +194,18 @@ def train(args, train_loader, eval_loader):
     ):
         t0 = time.time()
         try:
-            if args.distill_mode:
-                sounds, type_ids, labels = next(batch_iterator)
-            else:
-                sounds, type_ids = next(batch_iterator)
+            sounds, type_ids = next(batch_iterator)
         except StopIteration:
             batch_iterator = iter(train_loader)
-            if args.distill_mode:
-                sounds, type_ids, labels = next(batch_iterator)
-            else:
-                sounds, type_ids = next(batch_iterator)
+            sounds, type_ids = next(batch_iterator)
         except Exception as ex:
             print("Loading data exception:", ex)
 
         if torch.cuda.is_available():
             sounds = sounds.cuda()
             type_ids = type_ids.cuda()
-            if args.distill_mode:
-                labels = labels.cuda()
 
-        if torch.cuda.is_available():
+        '''if torch.cuda.is_available():
             one_hot = torch.cuda.FloatTensor(
                 type_ids.shape[0], config["num_classes"]
             )
@@ -226,14 +214,11 @@ def train(args, train_loader, eval_loader):
                 type_ids.shape[0], config["num_classes"]
             )
         one_hot.fill_(0.5 / (config["num_classes"] - 1))
-        one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
+        one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)'''
+        one_hot = F.one_hot(type_ids, num_classes=config["num_classes"])
 
-        # Use distilling mode
-        if args.distill_mode:
-            one_hot = labels
-
-        for index in range(1):  # Let's mixup two times
-            if iteration % config["verbose_period"] <= (config["verbose_period"] // 3):
+        for index in range(2):  # Let's mixup two times
+            if iteration % config["verbose_period"] == 0:
                 out = net(sounds)
                 loss = criterion(out, one_hot)
             else:
@@ -305,7 +290,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--batch_size", default=16, type=int, help="Batch size for training"
+        "--batch_size", default=64, type=int, help="Batch size for training"
     )
     parser.add_argument(
         "--max_epoch",
@@ -341,12 +326,6 @@ if __name__ == "__main__":
         help="Finetune model by using all categories",
     )
     parser.add_argument(
-        "--distill_mode",
-        default=False,
-        type=bool,
-        help="Distilling from previous labels",
-    )
-    parser.add_argument(
         "--label_path",
         default="/media/data2/label/V7.npy",
         type=str,
@@ -367,7 +346,6 @@ if __name__ == "__main__":
             WaveformDataset(
                 trn_df,
                 CFG.train_datadir,
-                img_size=CFG.img_size,
                 waveform_transforms = get_transforms("train"),
                 period = CFG.period,
                 validation = False
@@ -381,10 +359,9 @@ if __name__ == "__main__":
             WaveformDataset(
                 val_df,
                 CFG.train_datadir,
-                img_size=CFG.img_size,
                 waveform_transforms = get_transforms("valid"),
                 period = CFG.period,
-                validation = False
+                validation = True
             ),
             args.batch_size,
             num_workers=config["num_workers"],
