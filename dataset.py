@@ -30,7 +30,7 @@ class WaveformDataset(torchdata.Dataset):
         sound, sr = sf.read(self.datadir / ebird_code / wav_name)
 
         len_sound = len(sound)
-        effective_len = sr * self.period
+        effective_len = int(sr * self.period)
         if len_sound < effective_len:
             new_sound = np.zeros(effective_len, dtype=sound.dtype)
             if self.validation:

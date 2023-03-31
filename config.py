@@ -7,7 +7,7 @@ class CFG:
     n_mels = 128
     fmin = 20
     fmax = 16000
-    period = 5
+    period = 2.5
     transforms = {
         "train": [{"name": "Normalize"}],
         "valid": [{"name": "Normalize"}]

@@ -16,11 +16,11 @@ from model import TimmSED, init_weights
 from loss import BCEFocal2WayLoss
 from sklearn import model_selection
 
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmRestarts
 
 config = {
     "num_classes": len(CFG.target_columns),
-    "num_workers": 4,
+    "num_workers": 12,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
     "temperature": 2.0,
@@ -64,6 +64,11 @@ class Compose:
         for trns in self.transforms:
             y = trns(y)
         return y
+
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 
 def save_ckpt(net, iteration):
@@ -179,6 +184,13 @@ def train(args, train_loader, eval_loader):
         threshold=5e-3,
         threshold_mode="abs",
     )
+    '''T_0 = 5 * len(train_loader.dataset) // args.batch_size
+    scheduler = CosineAnnealingWarmRestarts(
+        optimizer,
+        T_0,
+        T_mult=2,
+        verbose=True
+    )'''
 
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
@@ -271,6 +283,11 @@ def train(args, train_loader, eval_loader):
                 flush=True,
             )
             scheduler.step(accuracy)
+            if get_lr(optimizer) < 1e-7:
+                print("The learning rate is below 1e-7 now so let's go back to initial lr")
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = args.lr
+
             sum_accuracy = 0
             step = 0
 
@@ -290,7 +307,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--batch_size", default=64, type=int, help="Batch size for training"
+        "--batch_size", default=128, type=int, help="Batch size for training"
     )
     parser.add_argument(
         "--max_epoch",
@@ -372,3 +389,4 @@ if __name__ == "__main__":
         print("Load dataset with {} secs".format(t1 - t0))
 
         train(args, train_loader, eval_loader)
+        break # just run once
