@@ -1,0 +1,7 @@
+numpy
+pandas
+torch
+librosa
+torchlibrosa
+audiomentations
+timm
