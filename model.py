@@ -182,8 +182,8 @@ class TimmSED(nn.Module):
                                                  freeze_parameters=True)
 
         # Spec augmenter
-        self.spec_augmenter = SpecAugmentation(time_drop_width=1, time_stripes_num=1,
-                                               freq_drop_width=1, freq_stripes_num=1)
+        self.spec_augmenter = SpecAugmentation(time_drop_width=4, time_stripes_num=2,
+                                               freq_drop_width=4, freq_stripes_num=2)
 
         self.bn0 = nn.BatchNorm2d(CFG.n_mels)
 
@@ -208,7 +208,8 @@ class TimmSED(nn.Module):
 
     def forward(self, input):
         # (batch_size, 1, time_steps, freq_bins)
-        x = self.spectrogram_extractor(input)
+        x = F.dropout(input, p=0.4, training=self.training)
+        x = self.spectrogram_extractor(x)
         x = self.logmel_extractor(x)    # (batch_size, 1, time_steps, mel_bins)
 
         frames_num = x.shape[2]
@@ -224,6 +225,7 @@ class TimmSED(nn.Module):
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
         x = self.encoder(x)
+        x = F.dropout(x, p=0.6, training=self.training)
 
         # (batch_size, channels, frames)
         x = torch.mean(x, dim=2)
@@ -237,7 +239,7 @@ class TimmSED(nn.Module):
         x = x.transpose(1, 2)
         x = F.relu_(self.fc1(x))
         x = x.transpose(1, 2)
-        # x = F.dropout(x, p=0.2, training=self.training)
+        x = F.dropout(x, p=0.8, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
         segmentwise_logit = self.att_block.cla(x).transpose(1, 2)

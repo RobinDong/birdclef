@@ -3,11 +3,11 @@ from pathlib import Path
 class CFG:
     n_fft = 2048
     hop_length = 512
-    sample_rate = 32000
+    sample_rate = 16000
     n_mels = 128
     fmin = 20
     fmax = 16000
-    period = 5
+    period = 3
     transforms = {
         "train": [{"name": "Normalize"}],
         "valid": [{"name": "Normalize"}]
@@ -18,7 +18,8 @@ class CFG:
         "shuffle": True,
         "random_state": 1213
     }
-    train_datadir = Path("../birdclef-2021/train_short_audio")
+    # train_datadir = Path("../birdclef-2021/train_short_audio")
+    train_datadir = Path("../numpy")
     train_csv = "../birdclef-2021/train_metadata.csv"
     target_columns = [
         'acafly', 'acowoo', 'aldfly', 'ameavo', 'amecro',

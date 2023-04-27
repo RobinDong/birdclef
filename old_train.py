@@ -15,6 +15,7 @@ from dataset import WaveformDataset
 from model import TimmSED, init_weights
 from loss import BCEFocal2WayLoss
 from sklearn import model_selection
+from sam import SAM
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmRestarts
 
@@ -138,7 +139,8 @@ def mixup_criterion(pred, y_a, y_b, lam):
 
 
 def train(args, train_loader, eval_loader):
-    net = TimmSED("tf_efficientnetv2_s_in21k", num_classes=config["num_classes"])
+    net = TimmSED("tf_mobilenetv3_small_075", num_classes=config["num_classes"])
+    # net = TimmSED("convnext_atto_ols", num_classes=config["num_classes"])
     init_weights(net)
     print(net)
     net = net.cuda(device=torch.cuda.current_device())
@@ -170,8 +172,10 @@ def train(args, train_loader, eval_loader):
             lr=args.lr,
         )
     else:
-        optimizer = optim.AdamW(
+        base_optimizer = optim.AdamW
+        optimizer = SAM(
             net.parameters(),
+            base_optimizer,
             lr=args.lr,
         )
 
@@ -195,14 +199,14 @@ def train(args, train_loader, eval_loader):
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
-    config["eval_period"] = len(train_loader.dataset) // args.batch_size
+    config["eval_period"] = len(train_loader.dataset) // args.batch_size * 5
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
 
     train_start_time = time.time()
     for iteration in range(
         args.resume + 1,
-        args.max_epoch * len(train_loader.dataset) // args.batch_size,
+        args.max_epoch * len(train_loader.dataset) // args.batch_size * 1000,
     ):
         t0 = time.time()
         try:
@@ -241,11 +245,26 @@ def train(args, train_loader, eval_loader):
                 loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
 
             # backprop
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
             loss.backward()
 
             nn.utils.clip_grad_norm_(net.parameters(), max_norm=20, norm_type=2)
-            optimizer.step()
+            optimizer.first_step(zero_grad=True)
+
+            if iteration % config["verbose_period"] == 0:
+                out = net(sounds)
+                loss = criterion(out, one_hot)
+            else:
+                # forward
+                out = net(inputs)
+                loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
+
+            # backprop
+            # optimizer.zero_grad()
+            loss.backward()
+
+            nn.utils.clip_grad_norm_(net.parameters(), max_norm=20, norm_type=2)
+            optimizer.second_step(zero_grad=True)
 
         t1 = time.time()
 
@@ -322,7 +341,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=4e-4, type=float, help="Initial learning rate"
+        "--lr", default=1e-3, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",
@@ -353,6 +372,11 @@ if __name__ == "__main__":
 
     t0 = time.time()
     df = pd.read_csv(CFG.train_csv)
+    orig_len = df.shape[0]
+    # Only choose class which has equal or more than 500 sound files
+    df = df[df.groupby('primary_label')['primary_label'].transform('size') >= 500].reset_index(drop=True)
+    print(f"Number of sound files: {df.shape[0]}/{orig_len} ({df.shape[0]*100/orig_len:.2f}%)")
+    print("Number of classes: ", df['primary_label'].drop_duplicates().value_counts().shape[0])
     splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
     for index, (trn_idx, val_idx) in enumerate(splitter.split(df, y=df["primary_label"])):
         print(f"Fold: {index}")
