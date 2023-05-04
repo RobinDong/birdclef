@@ -18,7 +18,7 @@ class CFG:
         "shuffle": True,
         "random_state": 1213
     }
-    train_datadir = Path("../birdclef-2021/train_short_audio")
+    train_datadir = Path("../numpy")
     train_csv = "../birdclef-2021/train_metadata.csv"
     target_columns = [
         'acafly', 'acowoo', 'aldfly', 'ameavo', 'amecro',

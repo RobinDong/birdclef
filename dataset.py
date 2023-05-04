@@ -25,12 +25,13 @@ class WaveformDataset(torchdata.Dataset):
     def __getitem__(self, idx: int):
         sample = self.df.loc[idx, :]
         wav_name = sample["filename"]
+        wav_name = wav_name[:-len("ogg")] + "npy"
         ebird_code = sample["primary_label"]
 
-        sound, sr = sf.read(self.datadir / ebird_code / wav_name)
+        sound = np.load(self.datadir / ebird_code / wav_name, mmap_mode="r")
 
         len_sound = len(sound)
-        effective_len = int(sr * self.period)
+        effective_len = int(CFG.sample_rate * self.period)
         if len_sound < effective_len:
             new_sound = np.zeros(effective_len, dtype=sound.dtype)
             if self.validation:
