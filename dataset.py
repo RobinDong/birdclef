@@ -1,23 +1,31 @@
+import torch
 import numpy as np
 import pandas as pd
-import soundfile as sf
 import torch.utils.data as torchdata
 
+from collections import defaultdict
 from pathlib import Path
 from config import CFG
+
 
 class WaveformDataset(torchdata.Dataset):
     def __init__(self,
                  df: pd.DataFrame,
                  datadir: Path,
-                 waveform_transforms = None,
-                 period = 5,
-                 validation = False):
+                 waveform_transforms=None,
+                 period=5,
+                 validation=False):
         self.df = df
         self.datadir = datadir
         self.waveform_transforms = waveform_transforms
         self.period = period
         self.validation = validation
+        # remember filenames for every category
+        cat_map = defaultdict(set)
+        for _, row in self.df.iterrows():
+            cat_map[row["primary_label"]].add(row["filename"])
+        self.cat_map = {key: list(value) for key, value in cat_map.items()}
+        self.categories = list(self.cat_map.keys())
 
     def __len__(self):
         return len(self.df)
@@ -25,8 +33,34 @@ class WaveformDataset(torchdata.Dataset):
     def __getitem__(self, idx: int):
         sample = self.df.loc[idx, :]
         wav_name = sample["filename"]
-        wav_name = wav_name[:-len("ogg")] + "npy"
         ebird_code = sample["primary_label"]
+        sound = self.get_sound(wav_name, ebird_code)
+
+        # 50% possibility to get pair_sound in same category, and
+        # 50% possibility to get pair_sound in another category
+        if np.random.randint(0, 2):  # same category but different wav_name
+            arr = self.cat_map[ebird_code]
+            if len(arr) > 1:
+                pair_wav_name = np.random.choice(arr)
+                while pair_wav_name == wav_name:
+                    pair_wav_name = np.random.choice(arr)
+            else:
+                pair_wav_name = wav_name
+            pair_sound = self.get_sound(pair_wav_name, ebird_code)
+            distance = 0
+        else:  # another category
+            pair_ebird_code = np.random.choice(self.categories)
+            while pair_ebird_code == ebird_code:
+                pair_ebird_code = np.random.choice(self.categories)
+            arr = self.cat_map[pair_ebird_code]
+            pair_wav_name = np.random.choice(arr)
+            pair_sound = self.get_sound(pair_wav_name, pair_ebird_code)
+            distance = 1
+        #return sound, pair_sound, torch.from_numpy(np.array([distance], dtype=np.float32))
+        return sound, pair_sound, distance
+
+    def get_sound(self, wav_name: str, ebird_code: str):
+        wav_name = wav_name[:-len("ogg")] + "npy"
 
         sound = np.load(self.datadir / ebird_code / wav_name, mmap_mode="r")
 
@@ -56,8 +90,17 @@ class WaveformDataset(torchdata.Dataset):
 
         sound = np.nan_to_num(sound)
 
-        # labels = np.zeros(len(CFG.target_columns), dtype=float)
-        # labels[CFG.target_columns.index(ebird_code)] = 1.0
-        label = CFG.target_columns.index(ebird_code)
+        return sound
 
-        return sound, label
+
+if __name__ == "__main__":
+    df = pd.read_csv(CFG.train_csv)
+    print(df)
+    wf = WaveformDataset(
+        df,
+        CFG.train_datadir,
+        waveform_transforms=None,
+        period=CFG.period,
+        validation=False
+    )
+    print(wf[1023])

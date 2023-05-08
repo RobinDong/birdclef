@@ -33,7 +33,8 @@ def init_weights(model):
             if len(weight.size()) > 1:
                 nn.init.orghogonal_(weight.data)
     elif classname.find("Linear") != -1:
-        model.weight.data.normal_(0, 0.01)
+        #model.weight.data.normal_(0, 0.1)
+        nn.init.xavier_uniform_(model.weight, gain=np.sqrt(2))
         model.bias.data.zero_()
 
 
@@ -192,21 +193,36 @@ class TimmSED(nn.Module):
         layers = list(base_model.children())[:-2]
         self.encoder = nn.Sequential(*layers)
 
-        if hasattr(base_model, "fc"):
+        if hasattr(base_model, "head"):
+            in_features = base_model.head.fc.in_features
+        elif hasattr(base_model, "fc"):
             in_features = base_model.fc.in_features
         else:
             in_features = base_model.classifier.in_features
-        self.fc1 = nn.Linear(in_features, in_features, bias=True)
+        print("in_features:", in_features)
+        self.fc1 = nn.Linear(in_features, 128, bias=True)
+        self.fc2 = nn.Linear(2048, 2, bias=True)
         self.att_block = AttBlockV2(
-            in_features, num_classes, activation="sigmoid")
+            in_features, 1024, activation="sigmoid")
 
         self.init_weight()
 
     def init_weight(self):
         init_layer(self.fc1)
+        init_layer(self.fc2)
         init_bn(self.bn0)
 
-    def forward(self, input):
+    def forward(self, x1, x2):
+        h1 = self.sub_forward(x1)
+        h2 = self.sub_forward(x2)
+
+        #print("h1h2:", h1.shape, h2.shape)
+        #distance = torch.sqrt(torch.square(h1 - h2).sum(dim=1))
+        distance = F.pairwise_distance(h1, h2)
+        #print("dist:", distance.shape)
+        return distance
+
+    def sub_forward(self, input):
         # (batch_size, 1, time_steps, freq_bins)
         x = self.spectrogram_extractor(input)
         x = self.logmel_extractor(x)    # (batch_size, 1, time_steps, mel_bins)
@@ -224,7 +240,7 @@ class TimmSED(nn.Module):
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
         x = self.encoder(x)
-
+        #print("x.shape:", x.shape)
         # (batch_size, channels, frames)
         x = torch.mean(x, dim=2)
 
@@ -235,10 +251,14 @@ class TimmSED(nn.Module):
 
         # x = F.dropout(x, p=0.2, training=self.training)
         x = x.transpose(1, 2)
-        x = F.relu_(self.fc1(x))
+        x = self.fc1(x)
         x = x.transpose(1, 2)
+        return torch.reshape(x, (x.shape[0], -1))
         # x = F.dropout(x, p=0.2, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
+        out = torch.reshape(clipwise_output, (clipwise_output.shape[0], -1))
+        return out
+
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
         segmentwise_logit = self.att_block.cla(x).transpose(1, 2)
         segmentwise_output = segmentwise_output.transpose(1, 2)
