@@ -248,7 +248,7 @@ class TimmSED(nn.Module):
         x1 = F.max_pool1d(x, kernel_size=3, stride=1, padding=1)
         x2 = F.avg_pool1d(x, kernel_size=3, stride=1, padding=1)
         x = x1 + x2
-
+        return torch.reshape(x, (x.shape[0], -1))
         # x = F.dropout(x, p=0.2, training=self.training)
         x = x.transpose(1, 2)
         x = self.fc1(x)

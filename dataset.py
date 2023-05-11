@@ -8,6 +8,28 @@ from pathlib import Path
 from config import CFG
 
 
+def get_transforms(phase: str):
+    transforms = CFG.transforms
+    if transforms is None:
+        return None
+    else:
+        if transforms[phase] is None:
+            return None
+        trns_list = []
+        for trns_conf in transforms[phase]:
+            trns_name = trns_conf["name"]
+            trns_params = {} if trns_conf.get("params") is None else \
+                trns_conf["params"]
+            if globals().get(trns_name) is not None:
+                trns_cls = globals()[trns_name]
+                trns_list.append(trns_cls(**trns_params))
+
+        if len(trns_list) > 0:
+            return Compose(trns_list)
+        else:
+            return None
+
+
 class WaveformDataset(torchdata.Dataset):
     def __init__(self,
                  df: pd.DataFrame,

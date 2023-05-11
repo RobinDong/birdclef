@@ -15,38 +15,16 @@ from dataset import WaveformDataset
 from model import TimmSED, init_weights
 from loss import BCEFocal2WayLoss
 from sklearn import model_selection
+from dataset import get_transforms
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmRestarts
 
 config = {
     "num_classes": len(CFG.target_columns),
-    "num_workers": 6,
+    "num_workers": 10,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
-    "temperature": 2.0,
 }
-
-
-def get_transforms(phase: str):
-    transforms = CFG.transforms
-    if transforms is None:
-        return None
-    else:
-        if transforms[phase] is None:
-            return None
-        trns_list = []
-        for trns_conf in transforms[phase]:
-            trns_name = trns_conf["name"]
-            trns_params = {} if trns_conf.get("params") is None else \
-                trns_conf["params"]
-            if globals().get(trns_name) is not None:
-                trns_cls = globals()[trns_name]
-                trns_list.append(trns_cls(**trns_params))
-
-        if len(trns_list) > 0:
-            return Compose(trns_list)
-        else:
-            return None
 
 
 class Normalize:
@@ -198,6 +176,7 @@ def train(args, train_loader, eval_loader):
         optimizer = optim.AdamW(
             filter(lambda param: param.requires_grad, net.parameters()),
             lr=args.lr,
+            weight_decay=0.0
         )
     else:
         optimizer = optim.AdamW(
@@ -225,7 +204,7 @@ def train(args, train_loader, eval_loader):
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
-    config["eval_period"] = len(train_loader.dataset) // args.batch_size * 10
+    config["eval_period"] = len(train_loader.dataset) // args.batch_size
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
 
@@ -388,7 +367,7 @@ if __name__ == "__main__":
     df = pd.read_csv(CFG.train_csv)
     orig_len = df.shape[0]
     # Only choose class which has equal or more than 500 sound files
-    df = df[df.groupby('primary_label')['primary_label'].transform('size') >= 500].reset_index(drop=True)
+    # df = df[df.groupby('primary_label')['primary_label'].transform('size') >= 100].reset_index(drop=True)
     print(f"Number of sound files: {df.shape[0]}/{orig_len} ({df.shape[0]*100/orig_len:.2f}%)")
     print("Number of classes: ", df['primary_label'].drop_duplicates().value_counts().shape[0])
     splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
@@ -396,6 +375,8 @@ if __name__ == "__main__":
         print(f"Fold: {index}")
         trn_df = df.loc[trn_idx, :].reset_index(drop=True)
         val_df = df.loc[val_idx, :].reset_index(drop=True)
+        trn_df[["primary_label", "filename"]].to_csv("train.csv")
+        val_df[["primary_label", "filename"]].to_csv("val.csv")
 
         train_loader = data.DataLoader(
             WaveformDataset(
