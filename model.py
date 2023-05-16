@@ -183,8 +183,8 @@ class TimmSED(nn.Module):
                                                  freeze_parameters=True)
 
         # Spec augmenter
-        self.spec_augmenter = SpecAugmentation(time_drop_width=1, time_stripes_num=1,
-                                               freq_drop_width=1, freq_stripes_num=1)
+        self.spec_augmenter = SpecAugmentation(time_drop_width=16, time_stripes_num=2,
+                                               freq_drop_width=8, freq_stripes_num=2)
 
         self.bn0 = nn.BatchNorm2d(CFG.n_mels)
 
@@ -220,6 +220,7 @@ class TimmSED(nn.Module):
         #distance = torch.sqrt(torch.square(h1 - h2).sum(dim=1))
         distance = F.pairwise_distance(h1, h2)
         #print("dist:", distance.shape)
+        distance = F.dropout(distance, p=0.1, training=self.training)
         return distance
 
     def sub_forward(self, input):
@@ -227,20 +228,26 @@ class TimmSED(nn.Module):
         x = self.spectrogram_extractor(input)
         x = self.logmel_extractor(x)    # (batch_size, 1, time_steps, mel_bins)
 
-        frames_num = x.shape[2]
+        '''frames_num = x.shape[2]
 
         x = x.transpose(1, 3)
         x = self.bn0(x)
-        x = x.transpose(1, 3)
+        x = x.transpose(1, 3)'''
 
-        # print(x.shape, self.training)
         if self.training:
             x = self.spec_augmenter(x)
+
+        # minmax scale
+        shape = x.shape
+        x = x.view(x.size(0), -1)
+        x -= x.min(1, keepdim=True)[0]
+        x /= x.max(1, keepdim=True)[0]
+        x = x.view(shape[0], shape[1], shape[2], shape[3])
 
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
         x = self.encoder(x)
-        #print("x.shape:", x.shape)
+        x = F.dropout(x, p=0.1, training=self.training)
         # (batch_size, channels, frames)
         x = torch.mean(x, dim=2)
 

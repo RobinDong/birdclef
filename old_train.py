@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmResta
 
 config = {
     "num_classes": len(CFG.target_columns),
-    "num_workers": 10,
+    "num_workers": 6,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
 }
@@ -187,7 +187,7 @@ def train(args, train_loader, eval_loader):
     scheduler = ReduceLROnPlateau(
         optimizer,
         "max",
-        factor=0.9,
+        factor=0.8,
         patience=2,
         verbose=True,
         threshold=5e-3,
@@ -204,7 +204,7 @@ def train(args, train_loader, eval_loader):
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
-    config["eval_period"] = len(train_loader.dataset) // args.batch_size
+    config["eval_period"] = len(train_loader.dataset) // args.batch_size * 4
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
 
