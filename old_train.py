@@ -138,7 +138,7 @@ def mixup_criterion(pred, y_a, y_b, lam):
 
 
 def train(args, train_loader, eval_loader):
-    net = TimmSED("tf_efficientnetv2_s_in21k", num_classes=config["num_classes"])
+    net = TimmSED("wide_resnet50_2", num_classes=config["num_classes"])
     init_weights(net)
     print(net)
     net = net.cuda(device=torch.cuda.current_device())
@@ -179,7 +179,7 @@ def train(args, train_loader, eval_loader):
         optimizer,
         "max",
         factor=0.5,
-        patience=1,
+        patience=2,
         verbose=True,
         threshold=5e-3,
         threshold_mode="abs",
@@ -195,7 +195,7 @@ def train(args, train_loader, eval_loader):
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
-    config["eval_period"] = len(train_loader.dataset) // args.batch_size
+    config["eval_period"] = len(train_loader.dataset) // args.batch_size * 2
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
 
@@ -307,7 +307,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--batch_size", default=64, type=int, help="Batch size for training"
+        "--batch_size", default=128, type=int, help="Batch size for training"
     )
     parser.add_argument(
         "--max_epoch",
@@ -322,7 +322,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=4e-4, type=float, help="Initial learning rate"
+        "--lr", default=1e-4, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",

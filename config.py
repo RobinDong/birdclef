@@ -4,7 +4,7 @@ class CFG:
     n_fft = 2048
     hop_length = 512
     sample_rate = 32000
-    n_mels = 128
+    n_mels = 64
     fmin = 20
     fmax = 16000
     period = 5
