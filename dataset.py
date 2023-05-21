@@ -13,7 +13,13 @@ class WaveformDataset(torchdata.Dataset):
                  waveform_transforms = None,
                  period = 5,
                  validation = False):
-        self.df = df
+        self.df = df[["filename", "primary_label"]]
+        if not validation:
+            nobird = pd.DataFrame({
+                "filename": [f"{index}.ogg" for index in range(480)],
+                "primary_label": ["nobird"] * 480
+            })
+            self.df = pd.concat([self.df, nobird]).sample(frac=1.0).reset_index(drop=True)
         self.datadir = datadir
         self.waveform_transforms = waveform_transforms
         self.period = period
@@ -28,7 +34,10 @@ class WaveformDataset(torchdata.Dataset):
         wav_name = wav_name[:-len("ogg")] + "npy"
         ebird_code = sample["primary_label"]
 
-        sound = np.load(self.datadir / ebird_code / wav_name, mmap_mode="r")
+        try:
+            sound = np.load(self.datadir / ebird_code / wav_name, mmap_mode="r")
+        except:
+            print(self.datadir / ebird_code / wav_name)
 
         len_sound = len(sound)
         effective_len = int(CFG.sample_rate * self.period)

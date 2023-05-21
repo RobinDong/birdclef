@@ -311,7 +311,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max_epoch",
-        default=100,
+        default=200,
         type=int,
         help="Maximum epoches for training",
     )

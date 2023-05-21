@@ -182,13 +182,13 @@ class TimmSED(nn.Module):
                                                  freeze_parameters=True)
 
         # Spec augmenter
-        self.spec_augmenter = SpecAugmentation(time_drop_width=16, time_stripes_num=1,
+        self.spec_augmenter = SpecAugmentation(time_drop_width=8, time_stripes_num=1,
                                                freq_drop_width=2, freq_stripes_num=1)
 
         self.bn0 = nn.BatchNorm2d(CFG.n_mels)
 
         base_model = timm.create_model(
-            base_model_name, pretrained=pretrained, in_chans=in_channels)
+            base_model_name, pretrained=pretrained, in_chans=in_channels, drop_rate=0.2, drop_path_rate=0.2, drop_block_rate=0.0)
         layers = list(base_model.children())[:-2]
         self.encoder = nn.Sequential(*layers)
 
@@ -231,7 +231,7 @@ class TimmSED(nn.Module):
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
         x = self.encoder(x)
-        x = F.dropout(x, p=0.1, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
 
         # (batch_size, channels, frames)
         x = torch.mean(x, dim=2)
@@ -245,7 +245,7 @@ class TimmSED(nn.Module):
         x = x.transpose(1, 2)
         x = F.relu_(self.fc1(x))
         x = x.transpose(1, 2)
-        x = F.dropout(x, p=0.1, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
         segmentwise_logit = self.att_block.cla(x).transpose(1, 2)

@@ -82,5 +82,5 @@ class CFG:
         'whwdov', 'wilfly', 'willet1', 'wilsni1', 'wiltur', 'wlswar', 'wooduc',
         'woothr', 'wrenti', 'y00475', 'yebcha', 'yebela1', 'yebfly', 'yebori1',
         'yebsap', 'yebsee1', 'yefgra1', 'yegvir', 'yehbla', 'yehcar1', 'yelgro',
-        'yelwar', 'yeofly1', 'yerwar', 'yeteup1', 'yetvir']
+        'yelwar', 'yeofly1', 'yerwar', 'yeteup1', 'yetvir', 'nobird']
 
