@@ -322,7 +322,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=1e-4, type=float, help="Initial learning rate"
+        "--lr", default=1e-3, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",
