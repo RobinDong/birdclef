@@ -15,6 +15,7 @@ from dataset import WaveformDataset
 from model import TimmSED, init_weights
 from loss import BCEFocal2WayLoss
 from sklearn import model_selection
+from early_stopper import EarlyStopper
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmRestarts
 
@@ -198,6 +199,7 @@ def train(args, train_loader, eval_loader):
     config["eval_period"] = len(train_loader.dataset) // args.batch_size * 2
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
+    early_stopper = EarlyStopper(patience=10)
 
     train_start_time = time.time()
     for iteration in range(
@@ -283,6 +285,9 @@ def train(args, train_loader, eval_loader):
                 flush=True,
             )
             scheduler.step(accuracy)
+            if early_stopper.early_stop(accuracy):
+                print(f"Early stopped from {early_stopper.min_validation_accuracy}")
+                break
             if get_lr(optimizer) < 1e-7:
                 print("The learning rate is below 1e-7 now so let's go back to initial lr")
                 for param_group in optimizer.param_groups:
