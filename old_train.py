@@ -357,7 +357,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     t0 = time.time()
-    df = pd.read_csv(CFG.train_csv)
+    task = {"filename": [], "primary_label": []}
+    with open("task.lst", "r") as fp:
+        for line in fp.readlines():
+            arr = line.split("/")
+            task["filename"].append(arr[-1].strip())
+            task["primary_label"].append(arr[-2].strip())
+    df = pd.DataFrame(task).sample(frac=1.0).reset_index(drop=True)
+
     splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
     for index, (trn_idx, val_idx) in enumerate(splitter.split(df, y=df["primary_label"])):
         print(f"Fold: {index}")
