@@ -12,12 +12,15 @@ import soundfile as sf
 from config import CFG
 from functools import partial
 from multiprocessing import Pool, current_process
+from multiprocessing.pool import ThreadPool
 from torchlibrosa.stft import LogmelFilterBank, Spectrogram
 
 
 RETRY = 10
 RETRY_WAIT = 10  # seconds
 
+PERIOD = 5
+SAMPLE_RATE = 32000
 TOO_SMALL_SIZE = 4096
 TOO_BIG_SIZE = 100 * 1048576
 
@@ -44,7 +47,7 @@ class SignalExtractor:
 
         for factor in self.factors:
             sound, sn_ratio = self._factor_extract(input, x, factor)
-            if sn_ratio >= self.sn_threshold:
+            if sn_ratio >= self.sn_threshold and sound.shape[0] >= (PERIOD * SAMPLE_RATE):
                 break
 
         return sound, sn_ratio
@@ -75,9 +78,16 @@ class SignalExtractor:
         return sound, sound.shape[0]/input.shape[0]
 
 
-def process(full_path, args):
+def process(input, args):
+    full_path, job_index = input
+    sound_name, _ = os.path.splitext(full_path.split("/")[-1])
+
     sub_dir = full_path.split("/")[-2]
     output_path = os.path.join(args.output_root, sub_dir)
+    new_path = os.path.join(output_path, f"{sound_name}.npy")
+    if os.path.exists(new_path) and os.stat(new_path).st_size > 4096:
+        return
+
     if not os.path.exists(output_path):
         os.mkdir(output_path)
 
@@ -94,37 +104,34 @@ def process(full_path, args):
     if file_size <= TOO_SMALL_SIZE or file_size > TOO_BIG_SIZE:
         return
 
-    sound_name, _ = os.path.splitext(full_path.split("/")[-1])
-    new_path = os.path.join(output_path, f"{sound_name}.npy")
-    sound, sr = sf.read(full_path)
-    sound = librosa.resample(sound, orig_sr=sr, target_sr=32000).astype(np.float16)
-    sn_extractor = SignalExtractor()
-    sound, sn_ratio = sn_extractor.extract(sound)
-    if sound is None or sn_ratio < 0.1:
+    try:
+        sound, sr = sf.read(full_path)
+    except Exception as ex:
+        print(ex)
+        print(f"read {full_path} failed")
+        return
+    if len(sound.shape) > 1:
+        sound = sound[:, 0]
+    if sound is None or sound.shape[0] < (PERIOD * sr):
+        print("original sound is too short")
+        return
+    if sr != SAMPLE_RATE:
+        sound = librosa.resample(sound, orig_sr=sr, target_sr=SAMPLE_RATE).astype(np.float16)
+    sound, sn_ratio = args.extractor.extract(sound)
+    if sound is None or sound.shape[0] < (PERIOD * SAMPLE_RATE):
+        print("extracted sound is too short")
+        return
+    if sn_ratio < 0.1:
         print(f"{full_path} extract failed {sound}:{sn_ratio}")
         return
     np.save(new_path, sound)
     print(full_path, new_path)
 
-    '''for _ in range(RETRY):
-        result = subprocess.run(
-            f"python3 -u export_single.py --input \"{full_path}\" --output \"{new_path}\"",
-            shell=True)
-        if result.returncode != 0:
-            print("retry")
-        else:
-            break'''
-
-    job_index = current_process().name.split("-")[-1]
-    job_index = int(job_index) - 1
-    with open(f"finish.{job_index}.lst", "a+") as fp:
-        fp.write(full_path + "\n")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--cpus", default=12, type=int, help="Number of cpu cores"
+        "--cpus", default=16, type=int, help="Number of cpu cores"
     )
     parser.add_argument(
         "--output_root", default="../numpy", type=str, help="Root directory of output"
@@ -134,27 +141,18 @@ if __name__ == "__main__":
     if not os.path.exists(args.output_root):
         os.mkdir(args.output_root)
 
-    finish_list = set()
-    for cpu in range(args.cpus):
-        if os.path.exists(f"finish.{cpu}.lst"):
-            with open(f"finish.{cpu}.lst") as fp:
-                while True:
-                    line = fp.readline()
-                    if not line:
-                        break
-                    finish_list.add(line)
-
     need_to_do = []
     with open("task.lst", "r") as fp:
+        index = 0
         while True:
             line = fp.readline()
             if not line:
                 break
-            if line in finish_list:
-                continue
-            need_to_do.append(line.strip())
+            need_to_do.append((line.strip(), index % args.cpus))
+            index += 1
 
-    pool = Pool(processes=args.cpus)
+    args.extractor = SignalExtractor()
+    pool = ThreadPool(processes=args.cpus)
     pool.map(
         partial(
             process,
