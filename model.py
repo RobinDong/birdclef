@@ -185,7 +185,7 @@ class TimmSED(nn.Module):
         self.spec_augmenter = SpecAugmentation(time_drop_width=8, time_stripes_num=1,
                                                freq_drop_width=2, freq_stripes_num=1)
 
-        self.bn0 = nn.BatchNorm2d(CFG.n_mels)
+        self.bn0 = nn.LayerNorm([1, 313, CFG.n_mels])
 
         base_model = timm.create_model(
             base_model_name, pretrained=pretrained, in_chans=in_channels, drop_rate=0.2, drop_path_rate=0.2, drop_block_rate=0.0)
@@ -213,20 +213,11 @@ class TimmSED(nn.Module):
 
         frames_num = x.shape[2]
 
-        '''x = x.transpose(1, 3)
         x = self.bn0(x)
-        x = x.transpose(1, 3)'''
 
         # print(x.shape, self.training)
         if self.training:
             x = self.spec_augmenter(x)
-
-        # minmax scale
-        shape = x.shape
-        x = x.reshape(shape[0], -1)
-        x -= x.min(1, keepdim=True)[0]
-        x /= x.max(1, keepdim=True)[0]
-        x = x.view(shape[0], shape[1], shape[2], shape[3])
 
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
