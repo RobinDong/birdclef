@@ -5,3 +5,4 @@ librosa
 torchlibrosa
 audiomentations
 timm
+opencv-python

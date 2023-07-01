@@ -20,8 +20,8 @@ from early_stopper import EarlyStopper
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmRestarts
 
 config = {
-    "num_classes": len(CFG.target_columns),
-    "num_workers": 12,
+    "num_classes": 11000,
+    "num_workers": 15,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
     "temperature": 2.0,
@@ -196,7 +196,7 @@ def train(args, train_loader, eval_loader):
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
-    config["eval_period"] = len(train_loader.dataset) // args.batch_size * 2
+    config["eval_period"] = len(train_loader.dataset) // args.batch_size
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
     early_stopper = EarlyStopper(patience=10)
@@ -245,7 +245,6 @@ def train(args, train_loader, eval_loader):
             # backprop
             optimizer.zero_grad()
             loss.backward()
-
             nn.utils.clip_grad_norm_(net.parameters(), max_norm=20, norm_type=2)
             optimizer.step()
 
@@ -312,7 +311,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--batch_size", default=128, type=int, help="Batch size for training"
+        "--batch_size", default=48, type=int, help="Batch size for training"
     )
     parser.add_argument(
         "--max_epoch",
@@ -327,7 +326,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=1e-3, type=float, help="Initial learning rate"
+        "--lr", default=1e-4, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",
@@ -357,13 +356,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     t0 = time.time()
-    task = {"filename": [], "primary_label": []}
-    with open("task.lst", "r") as fp:
+    task = {"filename": [], "primary_label": [], "index_label": []}
+    with open("npy.lst", "r") as fp:
         for line in fp.readlines():
             arr = line.split("/")
             task["filename"].append(arr[-1].strip())
             task["primary_label"].append(arr[-2].strip())
+            task["index_label"].append(int(arr[-1].strip().split(".")[0]))
     df = pd.DataFrame(task).sample(frac=1.0).reset_index(drop=True)
+    print(df)
+    df = df[df.groupby('index_label')['index_label'].transform('size') > 30].reset_index(drop=True)
+    print(df)
 
     splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
     for index, (trn_idx, val_idx) in enumerate(splitter.split(df, y=df["primary_label"])):

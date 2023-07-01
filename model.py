@@ -1,5 +1,6 @@
 import torch
 import timm
+import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -206,6 +207,17 @@ class TimmSED(nn.Module):
         init_layer(self.fc1)
         init_bn(self.bn0)
 
+    def robin_aug(self, x):
+        dice = torch.randint(-6, 3, (1,))
+        if dice == 0:
+            return x
+        if dice < 0:
+            x = torchvision.transforms.functional.crop(x, 0, -dice, 64, 313+dice)
+        else:
+            x = torch.nn.functional.pad(x, (dice, dice), "constant", 0)
+        x = torch.nn.functional.interpolate(x, size=(64, 313))
+        return x
+
     def forward(self, input):
         # (batch_size, 1, time_steps, freq_bins)
         x = self.spectrogram_extractor(input)
@@ -221,6 +233,8 @@ class TimmSED(nn.Module):
 
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
+        if self.training:
+            x = self.robin_aug(x)
         x = self.encoder(x)
         x = F.dropout(x, p=0.2, training=self.training)
 
