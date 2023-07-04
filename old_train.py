@@ -311,7 +311,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--batch_size", default=48, type=int, help="Batch size for training"
+        "--batch_size", default=60, type=int, help="Batch size for training"
     )
     parser.add_argument(
         "--max_epoch",

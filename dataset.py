@@ -23,8 +23,8 @@ class WaveformDataset(torchdata.Dataset):
         self.augment = Compose([
             AddGaussianNoise(min_amplitude=0.005, max_amplitude=0.015, p=poss),
             AddGaussianSNR(min_snr_in_db=5.0, max_snr_in_db=40.0, p=poss),
-            TimeStretch(min_rate=0.9, max_rate=1.1, p=poss),
-            PitchShift(min_semitones=-1, max_semitones=1, p=0.1)
+            #TimeStretch(min_rate=0.9, max_rate=1.1, p=poss),
+            #PitchShift(min_semitones=-1, max_semitones=1, p=0.1)
         ])
 
     def __len__(self):
