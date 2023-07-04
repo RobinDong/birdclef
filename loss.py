@@ -13,7 +13,7 @@ class BCEFocalLoss(nn.Module):
         loss = targets * self.alpha * \
             (1. - probas)**self.gamma * bce_loss + \
             (1. - targets) * probas**self.gamma * bce_loss
-        loss = loss.mean()
+        loss = loss.sum()
         return loss
 
 
