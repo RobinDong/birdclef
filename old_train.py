@@ -199,7 +199,7 @@ def train(args, train_loader, eval_loader):
     config["eval_period"] = len(train_loader.dataset) // args.batch_size
     config["verbose_period"] = config["eval_period"] // 5
     print("config:", config)
-    early_stopper = EarlyStopper(patience=10)
+    early_stopper = EarlyStopper(patience=100)
 
     train_start_time = time.time()
     for iteration in range(
@@ -219,7 +219,7 @@ def train(args, train_loader, eval_loader):
             sounds = sounds.cuda()
             type_ids = type_ids.cuda()
 
-        '''if torch.cuda.is_available():
+        if torch.cuda.is_available():
             one_hot = torch.cuda.FloatTensor(
                 type_ids.shape[0], config["num_classes"]
             )
@@ -228,8 +228,8 @@ def train(args, train_loader, eval_loader):
                 type_ids.shape[0], config["num_classes"]
             )
         one_hot.fill_(0.5 / (config["num_classes"] - 1))
-        one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)'''
-        one_hot = F.one_hot(type_ids, num_classes=config["num_classes"])
+        one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
+        # one_hot = F.one_hot(type_ids, num_classes=config["num_classes"])
 
         for index in range(2):  # Let's mixup two times
             if iteration % config["verbose_period"] == 0:
@@ -326,7 +326,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=1e-4, type=float, help="Initial learning rate"
+        "--lr", default=4e-4, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",
@@ -365,7 +365,7 @@ if __name__ == "__main__":
             task["index_label"].append(int(arr[-1].strip().split(".")[0]))
     df = pd.DataFrame(task).sample(frac=1.0).reset_index(drop=True)
     print(df)
-    df = df[df.groupby('index_label')['index_label'].transform('size') > 30].reset_index(drop=True)
+    df = df[df.groupby('index_label')['index_label'].transform('size') > 20].reset_index(drop=True)
     print(df)
 
     splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
