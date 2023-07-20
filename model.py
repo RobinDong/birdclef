@@ -248,8 +248,8 @@ class TimmSED(nn.Module):
 
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
-        if self.training:
-            x = self.robin_aug(x)
+        # if self.training:
+        #    x = self.robin_aug(x)
         x = self.encoder(x)
         x = F.dropout(x, p=0.1, training=self.training)
 

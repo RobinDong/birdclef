@@ -19,12 +19,12 @@ class WaveformDataset(torchdata.Dataset):
         self.waveform_transforms = waveform_transforms
         self.period = period
         self.validation = validation
-        poss = 0.4
+        poss = 0.3
         self.augment = Compose([
             AddGaussianNoise(min_amplitude=0.005, max_amplitude=0.015, p=poss),
             AddGaussianSNR(min_snr_in_db=5.0, max_snr_in_db=40.0, p=poss),
-            #TimeStretch(min_rate=0.9, max_rate=1.1, p=poss),
-            #PitchShift(min_semitones=-1, max_semitones=1, p=0.1)
+            TimeStretch(min_rate=0.8, max_rate=1.2, p=poss),
+            PitchShift(min_semitones=-2, max_semitones=2, p=poss)
         ])
 
     def __len__(self):
