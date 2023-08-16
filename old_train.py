@@ -13,7 +13,7 @@ import torch.nn as nn
 from config import CFG
 from dataset import WaveformDataset
 from model import TimmSED, init_weights
-from loss import BCEFocal2WayLoss
+from loss import BCEFocalLoss
 from sklearn import model_selection
 from early_stopper import EarlyStopper
 
@@ -94,7 +94,7 @@ def evaluate(args, net, eval_loader):
             type_ids = type_ids.cuda()
 
         # forward
-        out = net(sounds)["clipwise_output"]
+        out = net(sounds)
         # accuracy
         _, predict = torch.max(out, 1)
         correct = (predict == type_ids)
@@ -112,7 +112,7 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
         param_group["lr"] = lr
 
 
-def mixup_data(x, y, alpha=1.0, use_cuda=True):
+def mixup_data(x, y, alpha=3.0, use_cuda=True):
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
     else:
@@ -132,14 +132,14 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
 def criterion(outputs, targets):
     return torch.sum(-targets * F.log_softmax(outputs, -1), -1).mean()
 
-criterion = BCEFocal2WayLoss()
+criterion = BCEFocalLoss()
 
 def mixup_criterion(pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b), lam * y_a + (1 - lam) * y_b
 
 
 def train(args, train_loader, eval_loader):
-    net = TimmSED("wide_resnet50_2", num_classes=config["num_classes"])
+    net = TimmSED("convnextv2_atto", num_classes=config["num_classes"])
     init_weights(net)
     print(net)
     net = net.cuda(device=torch.cuda.current_device())
@@ -251,7 +251,6 @@ def train(args, train_loader, eval_loader):
         t1 = time.time()
 
         if iteration % config["verbose_period"] == 0:
-            out = out["clipwise_output"]
             # accuracy
             _, predict = torch.max(out, 1)
             correct = (predict == type_ids)
@@ -326,7 +325,7 @@ if __name__ == "__main__":
         help="Root path of data",
     )
     parser.add_argument(
-        "--lr", default=4e-4, type=float, help="Initial learning rate"
+        "--lr", default=2e-4, type=float, help="Initial learning rate"
     )
     parser.add_argument(
         "--momentum",
@@ -360,13 +359,14 @@ if __name__ == "__main__":
     with open("npy.lst", "r") as fp:
         for line in fp.readlines():
             arr = line.split("/")
-            task["filename"].append(arr[-1].strip())
-            task["primary_label"].append(arr[-2].strip())
-            task["index_label"].append(int(arr[-1].strip().split(".")[0]))
+            if arr[-1].find(".A.") > 0:
+                task["filename"].append(arr[-1].strip())
+                task["primary_label"].append(arr[-2].strip())
+                task["index_label"].append(int(arr[-1].strip().split(".")[0]))
     df = pd.DataFrame(task).sample(frac=1.0).reset_index(drop=True)
     print(df)
-    df = df[df.groupby('index_label')['index_label'].transform('size') > 20].reset_index(drop=True)
-    print(df)
+    df = df[df.groupby('index_label')['index_label'].transform('size') > 50].reset_index(drop=True)
+    print("Categories:", len(df["index_label"].drop_duplicates()))
 
     splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
     for index, (trn_idx, val_idx) in enumerate(splitter.split(df, y=df["primary_label"])):
@@ -395,7 +395,7 @@ if __name__ == "__main__":
                 period = CFG.period,
                 validation = True
             ),
-            args.batch_size,
+            args.batch_size // 16,
             num_workers=config["num_workers"],
             shuffle=False,
             pin_memory=True,

@@ -8,6 +8,8 @@ from config import CFG
 from torchlibrosa.stft import LogmelFilterBank, Spectrogram
 from torchlibrosa.augmentation import SpecAugmentation
 
+WIDTH = 751
+
 def init_layer(layer):
     nn.init.xavier_uniform_(layer.weight)
 
@@ -183,18 +185,20 @@ class TimmSED(nn.Module):
                                                  freeze_parameters=True)
 
         # Spec augmenter
-        self.spec_augmenter = SpecAugmentation(time_drop_width=8, time_stripes_num=1,
-                                               freq_drop_width=2, freq_stripes_num=1)
+        self.spec_augmenter = SpecAugmentation(time_drop_width=6, time_stripes_num=10,
+                                               freq_drop_width=6, freq_stripes_num=4)
 
-        self.bn0 = nn.LayerNorm([1, 313, CFG.n_mels])
+        self.bn0 = nn.LayerNorm([1, WIDTH, CFG.n_mels])
 
         base_model = timm.create_model(
-            base_model_name, pretrained=pretrained, in_chans=in_channels, drop_rate=0.1, drop_path_rate=0.1, drop_block_rate=0.0)
-        layers = list(base_model.children())[:-2]
+            base_model_name, num_classes=num_classes, pretrained=pretrained, in_chans=in_channels, drop_rate=0.1, drop_path_rate=0.1)
+        layers = list(base_model.children())
         self.encoder = nn.Sequential(*layers)
 
         if hasattr(base_model, "fc"):
             in_features = base_model.fc.in_features
+        elif hasattr(base_model, "head"):
+            in_features = base_model.head.in_features
         else:
             in_features = base_model.classifier.in_features
         self.fc1 = nn.Linear(in_features, in_features, bias=True)
@@ -212,7 +216,7 @@ class TimmSED(nn.Module):
         if dice == 0:
             return x
         if dice < 0:
-            x = torchvision.transforms.functional.crop(x, 0, -dice, 64, 313+dice)
+            x = torchvision.transforms.functional.crop(x, 0, -dice, 64, WIDTH+dice)
         else:
             x = torch.nn.functional.pad(x, (0, dice), "constant", 0)
         return x
@@ -222,7 +226,7 @@ class TimmSED(nn.Module):
         if dice == 0:
             return x
         if dice < 0:
-            x = torchvision.transforms.functional.crop(x, -dice, 0, 64+dice, 313)
+            x = torchvision.transforms.functional.crop(x, -dice, 0, 64+dice, WIDTH)
         else:
             x = torch.nn.functional.pad(x, (0, 0, 0, dice), "constant", 0)
         return x
@@ -230,7 +234,7 @@ class TimmSED(nn.Module):
     def robin_aug(self, x):
         x = self.horizontal_aug(x)
         x = self.vertical_aug(x)
-        x = torch.nn.functional.interpolate(x, size=(64, 313))
+        x = torch.nn.functional.interpolate(x, size=(64, WIDTH))
         return x
 
     def forward(self, input):
@@ -238,11 +242,11 @@ class TimmSED(nn.Module):
         x = self.spectrogram_extractor(input)
         x = self.logmel_extractor(x)    # (batch_size, 1, time_steps, mel_bins)
 
+        # print(x.shape, self.training)
         frames_num = x.shape[2]
 
         x = self.bn0(x)
 
-        # print(x.shape, self.training)
         if self.training:
             x = self.spec_augmenter(x)
 
@@ -251,7 +255,8 @@ class TimmSED(nn.Module):
         # if self.training:
         #    x = self.robin_aug(x)
         x = self.encoder(x)
-        x = F.dropout(x, p=0.1, training=self.training)
+        return x
+        x = F.dropout(x, p=0.2, training=self.training)
 
         # (batch_size, channels, frames)
         x = torch.mean(x, dim=2)
@@ -265,7 +270,7 @@ class TimmSED(nn.Module):
         x = x.transpose(1, 2)
         x = F.relu_(self.fc1(x))
         x = x.transpose(1, 2)
-        x = F.dropout(x, p=0.1, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
         segmentwise_logit = self.att_block.cla(x).transpose(1, 2)
